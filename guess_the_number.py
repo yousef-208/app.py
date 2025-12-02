@@ -11,18 +11,27 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 # Load credentials from secrets
-if "google_service_account" not in st.secrets:
-    st.error("Missing [google_service_account] in Secrets. Please add your service account JSON in Streamlit Secrets.")
-    st.stop()
-
 sa_info = dict(st.secrets["google_service_account"])
 
-# 🔧 Normalize private key formatting to avoid binascii errors
+# Normalize escaped newlines -> real newlines
 pk = sa_info.get("private_key", "")
-if pk:
-    sa_info["private_key"] = pk.replace("\\n", "\n")
+if not pk:
+    st.error("private_key is missing in [google_service_account] Secrets.")
+    st.stop()
+sa_info["private_key"] = pk.replace("\\n", "\n")
 
+# Optional sanity checks
+if not sa_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
+    st.error("Private key PEM header not found.")
+    st.stop()
+if "-----END PRIVATE KEY-----" not in sa_info["private_key"]:
+    st.error("Private key PEM footer not found.")
+    st.stop()
+
+# Build Sheets client (Sheets API only)
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+service = build("sheets", "v4", credentials=credentials)
 
 # Build Sheets API client
 service = build("sheets", "v4", credentials=credentials)
