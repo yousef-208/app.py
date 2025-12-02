@@ -14,18 +14,11 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 sa_info = dict(st.secrets["google_service_account"])  # make a copy
 
 # Normalize private key BEFORE using it
-pk = sa_info.get("private_key", "")
-if not pk:
-    st.error("private_key is missing in [google_service_account] Secrets.")
-    st.stop()
-sa_info["private_key"] = pk.replace("\\n", "\n")
+sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
 
-# Sanity checks
+# Validate private key
 if not sa_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
-    st.error("Private key PEM header not found.")
-    st.stop()
-if "-----END PRIVATE KEY-----" not in sa_info["private_key"]:
-    st.error("Private key PEM footer not found.")
+    st.error("Private key format is invalid.")
     st.stop()
 
 # Create credentials
@@ -34,19 +27,11 @@ credentials = service_account.Credentials.from_service_account_info(sa_info, sco
 # Connect to Google Sheets via gspread
 client = gspread.authorize(credentials)
 
-# Get Sheet ID from secrets or user input
+# Get Sheet ID
 SPREADSHEET_ID = sa_info.get("gsheet_id")
 if not SPREADSHEET_ID:
-    st.warning("No `gsheet_id` found in Secrets. Paste your Sheet ID below to continue.")
-    user_sheet_id = st.text_input(
-        "Google Sheet ID",
-        help="The long ID from the URL: https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit",
-        placeholder="1vw6e-z0AJKlDyE5oytQWcBH-iAe2HCZ8uhSPKyZXUgs",
-    )
-    if user_sheet_id:
-        SPREADSHEET_ID = user_sheet_id
-    else:
-        st.stop()
+    st.error("No Google Sheet ID found in secrets.")
+    st.stop()
 
 # Build Sheets API client
 service = build("sheets", "v4", credentials=credentials)
@@ -89,7 +74,6 @@ def load_leaderboard(limit=10):
         records.append({"name": name, "attempts": attempts, "timestamp": ts})
     sorted_records = sorted(records, key=lambda x: (x["attempts"], x["timestamp"]))
     return sorted_records[:limit]
-
 
 # ===============================
 # UI Styling
