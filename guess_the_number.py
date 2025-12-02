@@ -1,3 +1,4 @@
+
 import random
 import streamlit as st
 from datetime import datetime
@@ -8,56 +9,88 @@ import gspread
 # ===============================
 # Google Sheets Setup
 # ===============================
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-sa_info = dict(st.secrets["google_service_account"])
-sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
-
-credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-
-
-# Validate private key
-if not sa_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
-    st.error("Private key format is invalid.")
+# --- Load & validate secrets ---
+if "google_service_account" not in st.secrets:
+    st.error("Missing [google_service_account] section in secrets.toml.")
     st.stop()
 
-# Create credentials
-credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+sa_info = dict(st.secrets["google_service_account"])  # make a mutable copy
 
-# Connect to Google Sheets via gspread
-client = gspread.authorize(credentials)
-
-# Get Sheet ID
-SPREADSHEET_ID = sa_info.get("gsheet_id")
-if not SPREADSHEET_ID:
-    st.error("No Google Sheet ID found in secrets.")
+required_fields = ["client_email", "token_uri", "private_key", "gsheet_id"]
+missing = [f for f in required_fields if not sa_info.get(f)]
+if missing:
+    st.error(f"Missing required fields in secrets: {missing}")
     st.stop()
+
+# Convert \n escapes to real newlines BEFORE creating credentials
+sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n").strip()
+
+# Sanity checks for key shape
+pk = sa_info["private_key"]
+if "..." in pk:
+    st.error("Your private_key contains '...'. Paste the FULL key contents from the JSON. Do not use ellipses.")
+    st.stop()
+if not pk.startswith("-----BEGIN PRIVATE KEY-----") or "-----END PRIVATE KEY-----" not in pk:
+    st.error("Private key PEM header/footer not found. Ensure the key starts with '-----BEGIN PRIVATE KEY-----' and ends with '-----END PRIVATE KEY-----'.")
+    st.stop()
+if len(pk) < 1000:  # Typical PKCS#8 service account keys are ~1600–1800 chars
+    st.error("Private key appears too short. Paste the complete value from your Google Cloud JSON file.")
+    st.stop()
+
+# Create credentials (catch ASN.1 parse issues explicitly)
+try:
+    credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+except Exception as e:
+    st.error(f"Failed to parse service account credentials. Root cause: {e}")
+    st.stop()
+
+# Connect to Google Sheets (gspread is optional; leaving for future use)
+try:
+    client = gspread.authorize(credentials)
+except Exception as e:
+    st.warning(f"gspread authorization warning (not fatal for Sheets API usage): {e}")
 
 # Build Sheets API client
-service = build("sheets", "v4", credentials=credentials)
+try:
+    service = build("sheets", "v4", credentials=credentials)
+except Exception as e:
+    st.error(f"Failed to build Sheets API client: {e}")
+    st.stop()
 
-# Range name
-RANGE_NAME = "Sheet1"  # Change if your tab name differs
+# Spreadsheet details
+SPREADSHEET_ID = sa_info["gsheet_id"]
+RANGE_NAME = "Sheet1"  # Change if your tab name differs (e.g., 'Leaderboard')
 
 def add_score(name: str, attempts: int):
     """Append a score to the Google Sheet."""
     ts = datetime.utcnow().isoformat(timespec="seconds")
     values = [[name, str(attempts), ts]]
     body = {"values": values}
-    service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=RANGE_NAME,
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body=body
-    ).execute()
+    try:
+        service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=RANGE_NAME,
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body=body
+        ).execute()
+    except Exception as e:
+        st.error(f"Failed to append to the sheet: {e}")
 
 @st.cache_data(ttl=30)
 def load_leaderboard(limit=10):
     """Fetch and sort leaderboard from Google Sheets."""
-    result = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID,
-        range=RANGE_NAME
-    ).execute()
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=RANGE_NAME
+        ).execute()
+    except Exception as e:
+        st.error(f"Failed to read from the sheet: {e}")
+        return []
+
     rows = result.get("values", [])
     if len(rows) <= 1:
         return []
@@ -102,42 +135,50 @@ name = st.text_input("Enter your name:")
 difficulty = st.radio("🔥 Choose a difficulty level:", ["Easy (1-50)", "Hard (1-100)"])
 max_num = 50 if "Easy" in difficulty else 100
 
-if "number_to_guess" not in st.session_state:
+# Reset the number when difficulty changes
+if "last_max_num" not in st.session_state or st.session_state.last_max_num != max_num:
     st.session_state.number_to_guess = random.randint(1, max_num)
     st.session_state.attempts = 0
     st.session_state.max_attempts = 10
+    st.session_state.last_max_num = max_num
 
-st.markdown(f"<h3 style='color:#008080;'>I'm thinking of a number between 1 and {max_num}. You have {st.session_state.max_attempts} tries!</h3>", unsafe_allow_html=True)
+st.markdown(
+    f"<h3 style='color:#008080;'>I'm thinking of a number between 1 and {max_num}. You have {st.session_state.max_attempts} tries!</h3>",
+    unsafe_allow_html=True
+)
 
 guess = st.number_input("🎲 Enter your guess:", min_value=1, max_value=max_num, step=1)
 
-if st.button("🔄 Restart Game"):
-    st.session_state.number_to_guess = random.randint(1, max_num)
-    st.session_state.attempts = 0
-    st.info("Game restarted! A new number has been chosen.")
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🔄 Restart Game"):
+        st.session_state.number_to_guess = random.randint(1, max_num)
+        st.session_state.attempts = 0
+        st.info("Game restarted! A new number has been chosen.")
 
-if st.button("✅ Submit Guess"):
-    if not name:
-        st.error("Please enter your name before playing!")
-    else:
-        st.session_state.attempts += 1
-        target = st.session_state.number_to_guess
-
-        if guess < target:
-            st.warning("📉 Too low! Try again.")
-        elif guess > target:
-            st.warning("📈 Too high! Try again.")
+with col2:
+    if st.button("✅ Submit Guess"):
+        if not name.strip():
+            st.error("Please enter your name before playing!")
         else:
-            st.success(f"🎉 Correct! The number was {target}.")
-            st.balloons()
-            add_score(name, st.session_state.attempts)
-            load_leaderboard.clear()  # Refresh cache
-            st.session_state.number_to_guess = random.randint(1, max_num)
-            st.session_state.attempts = 0
+            st.session_state.attempts += 1
+            target = st.session_state.number_to_guess
 
-        if st.session_state.attempts >= st.session_state.max_attempts and guess != target:
-            st.error(f"😢 Out of tries! The number was {target}.")
-            st.info("Click 'Restart Game' to play again.")
+            if guess < target:
+                st.warning("📉 Too low! Try again.")
+            elif guess > target:
+                st.warning("📈 Too high! Try again.")
+            else:
+                st.success(f"🎉 Correct! The number was {target}.")
+                st.balloons()
+                add_score(name.strip(), st.session_state.attempts)
+                load_leaderboard.clear()  # Refresh cache
+                st.session_state.number_to_guess = random.randint(1, max_num)
+                st.session_state.attempts = 0
+
+            if st.session_state.attempts >= st.session_state.max_attempts and guess != target:
+                st.error(f"😢 Out of tries! The number was {target}.")
+                st.info("Click 'Restart Game' to play again.")
 
 # ===============================
 # Leaderboard Display
