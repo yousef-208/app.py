@@ -1,3 +1,4 @@
+import random
 import streamlit as st
 from google.oauth2 import service_account
 # If you use Google APIs, ensure you have `google-auth` (and the specific client) in requirements.txt
