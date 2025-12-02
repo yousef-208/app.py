@@ -2,49 +2,83 @@
 import streamlit as st
 import random
 
+# Custom CSS for colors
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f0f8ff;
+    }
+    .stButton>button {
+        background-color: #4CAF50;
+        color: white;
+        font-size: 18px;
+        border-radius: 10px;
+        padding: 10px 20px;
+    }
+    .stRadio>div {
+        color: #ff4500;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-def guess_the_number():
-    print("Welcome to Guess the Number!")
-    print("Choose a difficulty level:")
-    print("1. Easy (Number between 1 and 50)")
-    print("2. Hard (Number between 1 and 100)")
+# Title
+st.markdown("<h1 style='text-align:center; color:#ff1493;'>🎯 Guess the Number Game 🎯</h1>", unsafe_allow_html=True)
 
-    # Select difficulty
-    while True:
-        choice = input("Enter 1 for Easy or 2 for Hard: ")
-        if choice == "1":
-            max_num = 50
-            break
-        elif choice == "2":
-            max_num = 100
-            break
+# Player info
+st.subheader("👤 Player Information")
+name = st.text_input("Enter your name:")
+
+# Difficulty selection
+difficulty = st.radio("🔥 Choose a difficulty level:", ["Easy (1-50)", "Hard (1-100)"])
+max_num = 50 if "Easy" in difficulty else 100
+
+# Initialize session state
+if "number_to_guess" not in st.session_state:
+    st.session_state.number_to_guess = random.randint(1, max_num)
+    st.session_state.attempts = 0
+    st.session_state.max_attempts = 10
+if "leaderboard" not in st.session_state:
+    st.session_state.leaderboard = []
+
+st.markdown(f"<h3 style='color:#008080;'>I'm thinking of a number between 1 and {max_num}. You have {st.session_state.max_attempts} tries!</h3>", unsafe_allow_html=True)
+
+# User input
+guess = st.number_input("🎲 Enter your guess:", min_value=1, max_value=max_num, step=1)
+
+if st.button("✅ Submit Guess"):
+    if not name:
+        st.error("Please enter your name before playing!")
+    else:
+        st.session_state.attempts += 1
+        if guess < st.session_state.number_to_guess:
+            st.warning("📉 Too low! Try again.")
+        elif guess > st.session_state.number_to_guess:
+            st.warning("📈 Too high! Try again.")
         else:
-            print("Invalid choice. Please enter 1 or 2.")
+            st.success(f"🎉 Correct! The number was {st.session_state.number_to_guess}.")
+            st.balloons()
+            # Save score to leaderboard
+            st.session_state.leaderboard.append({"name": name, "attempts": st.session_state.attempts})
+            st.session_state.leaderboard = sorted(st.session_state.leaderboard, key=lambda x: x["attempts"])
+            st.session_state.number_to_guess = random.randint(1, max_num)
+            st.session_state.attempts = 0
 
-    number_to_guess = random.randint(1, max_num)
-    attempts = 0
-    max_attempts = 10
+        # Check attempts
+        if st.session_state.attempts >= st.session_state.max_attempts and guess != st.session_state.number_to_guess:
+            st.error(f"😢 Out of tries! The number was {st.session_state.number_to_guess}.")
+            st.write("🔄 Click below to play again.")
+            if st.button("Restart Game"):
+                st.session_state.number_to_guess = random.randint(1, max_num)
+                st.session_state.attempts = 0
 
-    print(f"\nI'm thinking of a number between 1 and {max_num}. You have {max_attempts} tries!")
+# Display leaderboard
+st.subheader("🏆 Leaderboard")
+if st.session_state.leaderboard:
+    for i, entry in enumerate(st.session_state.leaderboard[:10], start=1):
+        st.write(f"{i}. {entry['name']} - {entry['attempts']} attempts")
+else:
+    st.write("No scores yet. Be the first!")
 
-    while attempts < max_attempts:
-        try:
-            guess = int(input(f"Attempt {attempts + 1}/{max_attempts}: Enter your guess: "))
-            attempts += 1
 
-            if guess < number_to_guess:
-                print("Too low!")
-            elif guess > number_to_guess:
-                print("Too high!")
-            else:
-                print(f"🎉 Correct! The number was {number_to_guess}.")
-                print(f"You guessed it in {attempts} attempts!")
-                break
-        except ValueError:
-            print("Please enter a valid number.")
 
-    if attempts == max_attempts and guess != number_to_guess:
-        print(f"😢 Out of tries! The number was {number_to_guess}. Better luck next time!")
-
-# Run the game
-guess_the_number()
