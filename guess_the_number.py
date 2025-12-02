@@ -1,4 +1,3 @@
-
 import random
 import streamlit as st
 from datetime import datetime
@@ -6,17 +5,44 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # ===============================
-# Google Sheets Setup
+# Google Sheets Setup (Sheets API ONLY)
 # ===============================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# Load credentials from secrets
+if "google_service_account" not in st.secrets:
+    st.error("Missing [google_service_account] in Secrets. Please add your service account JSON in Streamlit Secrets.")
+    st.stop()
+
 sa_info = dict(st.secrets["google_service_account"])
 credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
 
 # Build Sheets API client
 service = build("sheets", "v4", credentials=credentials)
 
-SPREADSHEET_ID = st.secrets["gsheet_id"]
-RANGE_NAME = "Sheet1"  # Assuming your sheet is named "Sheet1"
+# Get Sheet ID: prefer Secrets; allow manual input fallback
+SPREADSHEET_ID = st.secrets.get("gsheet_id", None)
+
+with st.expander("📄 Google Sheets configuration", expanded=False):
+    st.write("This app uses Google Sheets API only (no Drive API).")
+    st.write({
+        "has_gsheet_id_secret": bool(SPREADSHEET_ID),
+        "service_account_email": sa_info.get("client_email", "unknown"),
+    })
+
+if not SPREADSHEET_ID:
+    st.warning("No `gsheet_id` found in Secrets. Paste your Sheet ID below to continue.")
+    user_sheet_id = st.text_input(
+        "Google Sheet ID",
+        help="The long ID from the URL: https://docs.google.com/spreadsheets/d/<SHEET_ID>/edit",
+        placeholder="1vw6e-z0AJKlDyE5oytQWcBH-iAe2HCZ8uhSPKyZXUgs",
+    )
+    if user_sheet_id:
+        SPREADSHEET_ID = user_sheet_id
+    else:
+        st.stop()
+
+RANGE_NAME = "Sheet1"  # Change if your tab name differs (e.g., 'Leaderboard')
 
 def add_score(name: str, attempts: int):
     """Append a score to the Google Sheet."""
@@ -41,9 +67,21 @@ def load_leaderboard(limit=10):
     rows = result.get("values", [])
     if len(rows) <= 1:
         return []
-    records = [{"name": r[0], "attempts": int(r[1]), "timestamp": r[2]} for r in rows[1:]]
+    # Expect header: name | attempts | timestamp
+    records = []
+    for r in rows[1:]:
+        # be defensive about missing cells
+        name = r[0] if len(r) > 0 else ""
+        attempts_str = r[1] if len(r) > 1 else "0"
+        ts = r[2] if len(r) > 2 else ""
+        try:
+            attempts = int(attempts_str)
+        except:
+            attempts = 0
+        records.append({"name": name, "attempts": attempts, "timestamp": ts})
     sorted_records = sorted(records, key=lambda x: (x["attempts"], x["timestamp"]))
     return sorted_records[:limit]
+
 
 # ===============================
 # UI Styling
