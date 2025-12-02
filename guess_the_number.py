@@ -1,6 +1,17 @@
-
 import streamlit as st
-import random
+from google.oauth2 import service_account
+# If you use Google APIs, ensure you have `google-auth` (and the specific client) in requirements.txt
+
+# Load service account info from secrets TOML
+sa_info = dict(st.secrets["google_service_account"])
+
+# Create Credentials object
+credentials = service_account.Credentials.from_service_account_info(sa_info)
+
+# Example: use credentials with a Google client (e.g., Google Cloud Storage)
+# from google.cloud import storage
+# client = storage.Client(credentials=credentials, project=sa_info["project_id"])
+
 
 # Custom CSS for colors
 st.markdown("""
