@@ -8,13 +8,12 @@ import gspread
 # ===============================
 # Google Sheets Setup
 # ===============================
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Load service account info
-sa_info = dict(st.secrets["google_service_account"])  # make a copy
-
-# Normalize private key BEFORE using it
+sa_info = dict(st.secrets["google_service_account"])
 sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n")
+
+credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+
 
 # Validate private key
 if not sa_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
