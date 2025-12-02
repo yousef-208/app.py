@@ -3,24 +3,24 @@ import streamlit as st
 from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import gspread
 
 # ===============================
-# Google Sheets Setup (Sheets API ONLY)
+# Google Sheets Setup
 # ===============================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# Load service account info
+sa_info = dict(st.secrets["google_service_account"])  # make a copy
 
-# Load credentials from secrets
-sa_info = dict(st.secrets["google_service_account"])
-
-# Normalize escaped newlines -> real newlines
+# Normalize private key BEFORE using it
 pk = sa_info.get("private_key", "")
 if not pk:
     st.error("private_key is missing in [google_service_account] Secrets.")
     st.stop()
 sa_info["private_key"] = pk.replace("\\n", "\n")
 
-# Optional sanity checks
+# Sanity checks
 if not sa_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
     st.error("Private key PEM header not found.")
     st.stop()
@@ -28,27 +28,14 @@ if "-----END PRIVATE KEY-----" not in sa_info["private_key"]:
     st.error("Private key PEM footer not found.")
     st.stop()
 
-# Build Sheets client (Sheets API only)
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# Create credentials
 credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
-service = build("sheets", "v4", credentials=credentials)
 
-# Build Sheets API client
-service = build("sheets", "v4", credentials=credentials)
+# Connect to Google Sheets via gspread
+client = gspread.authorize(credentials)
 
-# Build Sheets API client
-service = build("sheets", "v4", credentials=credentials)
-
-# Get Sheet ID: prefer Secrets; allow manual input fallback
-SPREADSHEET_ID = st.secrets.get("gsheet_id", None)
-
-with st.expander("📄 Google Sheets configuration", expanded=False):
-    st.write("This app uses Google Sheets API only (no Drive API).")
-    st.write({
-        "has_gsheet_id_secret": bool(SPREADSHEET_ID),
-        "service_account_email": sa_info.get("client_email", "unknown"),
-    })
-
+# Get Sheet ID from secrets or user input
+SPREADSHEET_ID = sa_info.get("gsheet_id")
 if not SPREADSHEET_ID:
     st.warning("No `gsheet_id` found in Secrets. Paste your Sheet ID below to continue.")
     user_sheet_id = st.text_input(
@@ -61,7 +48,11 @@ if not SPREADSHEET_ID:
     else:
         st.stop()
 
-RANGE_NAME = "Sheet1"  # Change if your tab name differs (e.g., 'Leaderboard')
+# Build Sheets API client
+service = build("sheets", "v4", credentials=credentials)
+
+# Range name
+RANGE_NAME = "Sheet1"  # Change if your tab name differs
 
 def add_score(name: str, attempts: int):
     """Append a score to the Google Sheet."""
@@ -86,10 +77,8 @@ def load_leaderboard(limit=10):
     rows = result.get("values", [])
     if len(rows) <= 1:
         return []
-    # Expect header: name | attempts | timestamp
     records = []
     for r in rows[1:]:
-        # be defensive about missing cells
         name = r[0] if len(r) > 0 else ""
         attempts_str = r[1] if len(r) > 1 else "0"
         ts = r[2] if len(r) > 2 else ""
