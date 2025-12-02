@@ -24,18 +24,25 @@ if missing:
     st.error(f"Missing required fields in secrets: {missing}")
     st.stop()
 
-# Convert \n escapes to real newlines BEFORE creating credentials
-sa_info["private_key"] = sa_info["private_key"].replace("\\n", "\n").strip()
+# Normalize private key BEFORE creating credentials
+pk = sa_info["private_key"].strip()
 
-# Sanity checks for key shape
-pk = sa_info["private_key"]
+# Handle both cases:
+# - If secrets has escaped \n (common), convert to real newlines
+# - If secrets already contains real newlines, leave them
+if "\\n" in pk and "\n" not in pk:
+    pk = pk.replace("\\n", "\n")
+
+sa_info["private_key"] = pk
+
+# Sanity checks for key shape without revealing content
 if "..." in pk:
-    st.error("Your private_key contains '...'. Paste the FULL key contents from the JSON. Do not use ellipses.")
+    st.error("Your private_key contains '...'. Paste the FULL key from the JSON. Do not use ellipses.")
     st.stop()
 if not pk.startswith("-----BEGIN PRIVATE KEY-----") or "-----END PRIVATE KEY-----" not in pk:
-    st.error("Private key PEM header/footer not found. Ensure the key starts with '-----BEGIN PRIVATE KEY-----' and ends with '-----END PRIVATE KEY-----'.")
+    st.error("Private key must include the PEM header/footer: BEGIN/END PRIVATE KEY.")
     st.stop()
-if len(pk) < 1000:  # Typical PKCS#8 service account keys are ~1600–1800 chars
+if len(pk) < 1200:  # Typical PKCS#8 service account keys are ~1600–1800 chars
     st.error("Private key appears too short. Paste the complete value from your Google Cloud JSON file.")
     st.stop()
 
@@ -46,7 +53,7 @@ except Exception as e:
     st.error(f"Failed to parse service account credentials. Root cause: {e}")
     st.stop()
 
-# Connect to Google Sheets (gspread is optional; leaving for future use)
+# Connect to Google Sheets
 try:
     client = gspread.authorize(credentials)
 except Exception as e:
