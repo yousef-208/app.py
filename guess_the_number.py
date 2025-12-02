@@ -9,13 +9,23 @@ from googleapiclient.discovery import build
 # ===============================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+
 # Load credentials from secrets
 if "google_service_account" not in st.secrets:
     st.error("Missing [google_service_account] in Secrets. Please add your service account JSON in Streamlit Secrets.")
     st.stop()
 
 sa_info = dict(st.secrets["google_service_account"])
+
+# 🔧 Normalize private key formatting to avoid binascii errors
+pk = sa_info.get("private_key", "")
+if pk:
+    sa_info["private_key"] = pk.replace("\\n", "\n")
+
 credentials = service_account.Credentials.from_service_account_info(sa_info, scopes=SCOPES)
+
+# Build Sheets API client
+service = build("sheets", "v4", credentials=credentials)
 
 # Build Sheets API client
 service = build("sheets", "v4", credentials=credentials)
