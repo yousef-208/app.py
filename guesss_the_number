@@ -1,0 +1,47 @@
+import random
+
+def guess_the_number():
+    print("Welcome to Guess the Number!")
+    print("Choose a difficulty level:")
+    print("1. Easy (Number between 1 and 50)")
+    print("2. Hard (Number between 1 and 100)")
+
+    # Select difficulty
+    while True:
+        choice = input("Enter 1 for Easy or 2 for Hard: ")
+        if choice == "1":
+            max_num = 50
+            break
+        elif choice == "2":
+            max_num = 100
+            break
+        else:
+            print("Invalid choice. Please enter 1 or 2.")
+
+    number_to_guess = random.randint(1, max_num)
+    attempts = 0
+    max_attempts = 10
+
+    print(f"\nI'm thinking of a number between 1 and {max_num}. You have {max_attempts} tries!")
+
+    while attempts < max_attempts:
+        try:
+            guess = int(input(f"Attempt {attempts + 1}/{max_attempts}: Enter your guess: "))
+            attempts += 1
+
+            if guess < number_to_guess:
+                print("Too low!")
+            elif guess > number_to_guess:
+                print("Too high!")
+            else:
+                print(f"🎉 Correct! The number was {number_to_guess}.")
+                print(f"You guessed it in {attempts} attempts!")
+                break
+        except ValueError:
+            print("Please enter a valid number.")
+
+    if attempts == max_attempts and guess != number_to_guess:
+        print(f"😢 Out of tries! The number was {number_to_guess}. Better luck next time!")
+
+# Run the game
+guess_the_number()
