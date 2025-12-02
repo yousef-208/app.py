@@ -1,4 +1,7 @@
+
+import streamlit as st
 import random
+
 
 def guess_the_number():
     print("Welcome to Guess the Number!")
